@@ -4,34 +4,51 @@ using CDDLib     # Polyhedra backend
 using Graphs     # For graph construction
 using Plots      # For plotting
 
-# ---- 1. Obstacles and Free Regions ----
 
-# Define obstacles (as convex polygons)
+# ---- 1. Obstacles and Free Space Decomposition ----
+using Random
+Random.seed!(23)
+
+# Generate non-intersecting random convex obstacles
+function random_convex_polygon(center, scale, nverts=5)
+    angles = sort(rand(nverts) .* 2π)
+    radii = scale .* (0.7 .+ 0.6 .* rand(nverts))
+    verts = [center .+ r .* [cos(a), sin(a)] for (a, r) in zip(angles, radii)]
+    return verts
+end
+
 function make_obstacle(vertices)
     v = vrep(vertices)
     return polyhedron(v, CDDLib.Library())
 end
 
-obstacles = [
-    make_obstacle([[1.0, 1.0], [1.5, 1.0], [1.5, 1.5], [1.0, 1.5]]),
-    make_obstacle([[3.0, 3.0], [3.5, 3.0], [3.5, 3.5], [3.0, 3.5]])
-]
-
-
-# Generate a lot more convex regions (random rectangles)
-using Random
-Random.seed!(23)
-num_regions = 25
-region_size = 0.7
-region_centers = [[rand()*4, rand()*4] for _ in 1:num_regions]
-function make_rectangle(center, size)
-    x, y = center
-    s = size/2
-    verts = [[x-s, y-s], [x+s, y-s], [x+s, y+s], [x-s, y+s]]
-    v = vrep(verts)
-    return polyhedron(v, CDDLib.Library())
+obstacles = []
+max_obstacles = 6
+tries = 0
+while length(obstacles) < max_obstacles && tries < 1000
+    c = [0.7 + 2.6*rand(), 0.7 + 2.6*rand()]
+    verts = [c .+ r .* [cos(a), sin(a)] for (a, r) in zip(sort(rand(5) .* 2π), 0.3 .+ 0.2 .* rand(5))]
+    obs = make_obstacle(verts)
+    # Check for intersection with existing obstacles
+    if all(isempty(intersect(obs, o)) for o in obstacles)
+        push!(obstacles, obs)
+    end
+    global tries += 1
 end
-regions = [make_rectangle(c, region_size) for c in region_centers]
+
+# Decompose free space into convex sets (simple grid-based for illustration)
+grid_n = 6
+domain = make_obstacle([[0.0,0.0],[4.0,0.0],[4.0,4.0],[0.0,4.0]])
+regions = []
+for i in 0:grid_n-1, j in 0:grid_n-1
+    x0, x1 = 4/grid_n*i, 4/grid_n*(i+1)
+    y0, y1 = 4/grid_n*j, 4/grid_n*(j+1)
+    cell = make_obstacle([[x0,y0],[x1,y0],[x1,y1],[x0,y1]])
+    # Only keep cell if it does not intersect any obstacle
+    if all(isempty(intersect(cell, obs)) for obs in obstacles)
+        push!(regions, cell)
+    end
+end
 
 # ---- 2. Graph Construction ----
 
@@ -131,6 +148,19 @@ if isdefined(Main, :region_path) && length(region_path) >= 2
     xs = [p[1] for p in path_points]
     ys = [p[2] for p in path_points]
     plot!(xs, ys, lw=3, color=:black, marker=:circle, label="Path")
+
+    # --- Bezier curve visualization ---
+    # For each segment, draw a quadratic Bezier curve from p0 to p2 with p1 as control
+    for i in 1:length(path_points)-2
+        p0 = path_points[i]
+        p1 = path_points[i+1]
+        p2 = path_points[i+2]
+        ts = range(0, 1, length=100)
+        bezier = [(1-t)^2 .* p0 .+ 2*(1-t)*t .* p1 .+ t^2 .* p2 for t in ts]
+        bx = [b[1] for b in bezier]
+        by = [b[2] for b in bezier]
+        plot!(bx, by, color=:magenta, lw=2, alpha=0.7, label=nothing)
+    end
 end
 
 display(plt)
