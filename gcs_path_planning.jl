@@ -27,198 +27,85 @@ end
 # 1. Environment Setup & Decomposition
 # ==============================================================================
 
-# Helper to create a convex polygon (obstacle) using Convex Hull
-function random_convex_polygon(center, scale, npoints=10)
-    # Generate random points around the center
-    points_cloud = [center .+ scale .* (rand(2) .- 0.5) for _ in 1:npoints]
-    return points_cloud
+include("convex_decomposition.jl")
+using .ConvexDecomposition
+
+# Helper to convert between types
+function to_point(v::Vector{Float64})
+    return ConvexDecomposition.Point(v[1], v[2])
 end
 
-function make_polyhedron(vertices)
-    v = vrep(vertices)
-    return polyhedron(v, CDDLib.Library())
+function from_point(p::ConvexDecomposition.Point)
+    return [p.x, p.y]
 end
 
 function generate_environment()
-    # Generate Obstacles
+    # 1. Generate Convex Obstacles
     obstacles = []
-    max_obstacles = 5
+    holes_points = Vector{Vector{ConvexDecomposition.Point}}()
+    
+    max_obstacles = 8
     tries = 0
     while length(obstacles) < max_obstacles && tries < 1000
         c = [0.5 + 3.0*rand(), 0.5 + 3.0*rand()]
-        # Generate random points for hull
-        verts = random_convex_polygon(c, 0.8, 8)
-        obs = make_polyhedron(verts)
+        # Generate random points
+        pts = [c .+ 0.6 .* (rand(2) .- 0.5) for _ in 1:10]
         
-        # Check if valid (non-empty, reasonable area)
-        if volume(obs) > 0.01 && all(isempty(intersect(obs, o)) for o in obstacles)
-            push!(obstacles, obs)
+        # Compute Convex Hull using Polyhedra/CDDLib
+        v = vrep(pts)
+        p = polyhedron(v, CDDLib.Library())
+        removevredundancy!(p)
+        
+        # Get ordered vertices for the hole
+        # Polyhedra doesn't guarantee order, so we sort angularly (CCW)
+        verts = collect(points(p))
+        cen = mean(verts)
+        sort!(verts, by = v -> atan(v[2]-cen[2], v[1]-cen[1]))
+        
+        # Check if valid and non-overlapping
+        poly_obj = polyhedron(vrep(verts), CDDLib.Library())
+        if volume(poly_obj) > 0.05 && all(isempty(intersect(poly_obj, o)) for o in obstacles)
+            push!(obstacles, poly_obj)
+            
+            # Create inflated hole for decomposition (Safety Margin)
+            # Scale vertices relative to center
+            margin_scale = 1.2 # 20% inflation
+            inflated_verts = [cen .+ (v .- cen) .* margin_scale for v in verts]
+            
+            # IMPORTANT: Holes must be Clockwise (CW) for the decomposition logic
+            # (which assumes "Left" is inside the polygon).
+            # sort! gave us CCW, so we reverse it.
+            reverse!(inflated_verts)
+            
+            # Convert to Points for decomposition
+            push!(holes_points, [to_point(v) for v in inflated_verts])
         end
         tries += 1
     end
 
-    # Helper: Closest point on polygon to point
-    function closest_point_on_polygon(pt, poly_verts)
-        min_dist_sq = Inf
-        closest_pt = pt
-        
-        # Ensure vertices are ordered for edge iteration
-        cen = mean(poly_verts)
-        sorted_verts = sort(poly_verts, by = v -> atan(v[2]-cen[2], v[1]-cen[1]))
-        
-        # Check edges
-        for i in 1:length(sorted_verts)
-            p1 = sorted_verts[i]
-            p2 = sorted_verts[i == length(sorted_verts) ? 1 : i+1]
-            
-            # Project pt onto line segment p1-p2
-            v = p2 - p1
-            w = pt - p1
-            c1 = dot(w, v)
-            if c1 <= 0
-                cp = p1
-            else
-                c2 = dot(v, v)
-                if c2 <= c1
-                    cp = p2
-                else
-                    b = c1 / c2
-                    cp = p1 + b * v
-                end
-            end
-            
-            d_sq = sum((pt - cp).^2)
-            if d_sq < min_dist_sq
-                min_dist_sq = d_sq
-                closest_pt = cp
-            end
-        end
-        return closest_pt
-    end
+    # 2. Define Domain (Free Space Boundary)
+    # CCW order: (0,0) -> (4,0) -> (4,4) -> (0,4)
+    domain_points = [
+        ConvexDecomposition.Point(0.0, 0.0),
+        ConvexDecomposition.Point(4.0, 0.0),
+        ConvexDecomposition.Point(4.0, 4.0),
+        ConvexDecomposition.Point(0.0, 4.0)
+    ]
 
-    # Generate seeds using Greedy Maximal Clearance (GVD approximation)
-    grid_res = 40
-    xs = range(0.05, 3.95, length=grid_res)
-    ys = range(0.05, 3.95, length=grid_res)
-    grid_pts = [[x, y] for x in xs, y in ys]
-    dists = zeros(grid_res, grid_res)
-    valid_mask = trues(grid_res, grid_res)
+    # 3. Decompose
+    # The convex_decompose function handles merging holes into the domain and then partitioning.
+    polys_points = ConvexDecomposition.convex_decompose(domain_points, holes_points)
     
-    for i in 1:grid_res, j in 1:grid_res
-        pt = grid_pts[i, j]
-        
-        # Check if inside any obstacle
-        in_obs = false
-        for obs in obstacles
-            if in(pt, obs)
-                in_obs = true
-                break
-            end
-        end
-        
-        if in_obs
-            dists[i, j] = -1.0
-            valid_mask[i, j] = false
-            continue
-        end
-        
-        # Compute min distance to any obstacle boundary
-        min_d = Inf
-        for obs in obstacles
-            verts = collect(points(vrep(obs)))
-            if isempty(verts); continue; end
-            cp = closest_point_on_polygon(pt, verts)
-            d = norm(pt - cp)
-            if d < min_d
-                min_d = d
-            end
-        end
-        
-        # Also check distance to domain bounds
-        d_bounds = min(pt[1], 4.0 - pt[1], pt[2], 4.0 - pt[2])
-        min_d = min(min_d, d_bounds)
-        
-        dists[i, j] = min_d
-    end
-    
-    seeds = []
-    num_seeds = 30 
-    
-    # Greedy selection
-    for _ in 1:num_seeds
-        max_d = -1.0
-        max_idx = (-1, -1)
-        
-        for i in 1:grid_res, j in 1:grid_res
-            if valid_mask[i, j] && dists[i, j] > max_d
-                max_d = dists[i, j]
-                max_idx = (i, j)
-            end
-        end
-        
-        if max_d <= 0.1; break; end
-        
-        seed_pt = grid_pts[max_idx[1], max_idx[2]]
-        push!(seeds, seed_pt)
-        
-        inhibition_radius = max_d * 1.5 
-        
-        for i in 1:grid_res, j in 1:grid_res
-            if valid_mask[i, j]
-                if norm(grid_pts[i, j] - seed_pt) < inhibition_radius
-                    dists[i, j] = -1.0
-                end
-            end
-        end
-    end
-    
-    println("Generated $(length(seeds)) seeds using GVD heuristic.")
-    
+    # 4. Convert back to Polyhedra regions
     regions = []
-    bbox = make_polyhedron([[0.0,0.0], [4.0,0.0], [4.0,4.0], [0.0,4.0]])
-    
-    for (i, site) in enumerate(seeds)
-        in_obs = false
-        for obs in obstacles
-             if in(site, obs)
-                 in_obs = true
-                 break
-             end
-        end
-        if in_obs; continue; end
-
-        cell = bbox
-        
-        # 1. Voronoi Bisectors
-        for (j, other) in enumerate(seeds)
-            if i == j; continue; end
-            normal = other - site
-            rhs = 0.5 * (dot(other, other) - dot(site, site))
-            hs = HalfSpace(normal, rhs)
-            cell = intersect(cell, hs)
-        end
-        
-        # 2. Separating Hyperplanes
-        for obs in obstacles
-            verts = collect(points(vrep(obs)))
-            if isempty(verts); continue; end
-            cp = closest_point_on_polygon(site, verts)
-            normal = site - cp
-            dist = norm(normal)
-            if dist < 1e-6; continue; end
-            normal = normal / dist
-            margin = 0.01
-            cp_safe = cp + margin * normal
-            hs = HalfSpace(-normal, -dot(normal, cp_safe))
-            cell = intersect(cell, hs)
-        end
-        
-        if !isempty(cell)
-            push!(regions, cell)
-        end
+    for pp in polys_points
+        if length(pp) < 3; continue; end
+        # Convert to Vector{Vector{Float64}}
+        verts = [from_point(p) for p in pp]
+        push!(regions, polyhedron(vrep(verts), CDDLib.Library()))
     end
     
-    return obstacles, regions, seeds
+    return obstacles, regions
 end
 
 # Retry loop
@@ -234,7 +121,7 @@ connected = false
 
 for attempt in 1:max_retries
     println("Attempt $attempt...")
-    global obstacles, regions, seeds = generate_environment()
+    global obstacles, regions = generate_environment()
     
     if isempty(regions)
         continue
@@ -243,25 +130,34 @@ for attempt in 1:max_retries
     global n_regions = length(regions)
     global adj_matrix = zeros(Bool, n_regions, n_regions)
 
-    # Build graph using Delaunay Triangulation (Dual of Voronoi)
-    tess = DelaunayTessellation()
-    seed_map = Dict{Point2D, Int}()
+    # Build graph by checking shared boundaries
+    # Two polygons are adjacent if they share an edge (segment)
+    # We can check if they share at least 2 vertices.
     
-    for (i, s) in enumerate(seeds)
-        x_vd = to_vd(s[1])
-        y_vd = to_vd(s[2])
-        pt = Point2D(x_vd, y_vd)
-        push!(tess, pt)
-        seed_map[pt] = i
+    # Helper to get vertices of a region
+    function get_verts(reg)
+        vs = collect(points(vrep(reg)))
+        # Snap to grid to avoid float issues? 
+        # Or just use a tolerance equality
+        return vs
     end
     
-    for edge in delaunayedges(tess)
-        p_a = geta(edge)
-        p_b = getb(edge)
-        if haskey(seed_map, p_a) && haskey(seed_map, p_b)
-            i = seed_map[p_a]
-            j = seed_map[p_b]
-            if !isempty(intersect(regions[i], regions[j]))
+    region_verts = [get_verts(r) for r in regions]
+    
+    for i in 1:n_regions
+        for j in i+1:n_regions
+            # Check for shared edge
+            # Count shared vertices
+            shared = 0
+            for v1 in region_verts[i]
+                for v2 in region_verts[j]
+                    if norm(v1 - v2) < 1e-4
+                        shared += 1
+                    end
+                end
+            end
+            
+            if shared >= 2
                 adj_matrix[i, j] = true
                 adj_matrix[j, i] = true
             end
@@ -269,8 +165,23 @@ for attempt in 1:max_retries
     end
     
     # Pick Start/Goal
-    global start_region_idx = 1
-    global goal_region_idx = n_regions
+    # Pick random regions? Or first and last?
+    # Let's pick regions far apart.
+    centroids = [mean(get_verts(r)) for r in regions]
+    
+    # Find pair with max distance
+    max_dist = -1.0
+    best_pair = (1, 1)
+    for i in 1:n_regions, j in 1:n_regions
+        d = norm(centroids[i] - centroids[j])
+        if d > max_dist
+            max_dist = d
+            best_pair = (i, j)
+        end
+    end
+    
+    global start_region_idx = best_pair[1]
+    global goal_region_idx = best_pair[2]
     
     # BFS Check
     q = [start_region_idx]
@@ -293,10 +204,8 @@ for attempt in 1:max_retries
     if found
         println("Connected environment found on attempt $attempt.")
         global connected = true
-        pts_s = collect(points(vrep(regions[start_region_idx])))
-        pts_g = collect(points(vrep(regions[goal_region_idx])))
-        global start_pos = mean(pts_s)
-        global goal_pos = mean(pts_g)
+        global start_pos = centroids[start_region_idx]
+        global goal_pos = centroids[goal_region_idx]
         break
     end
 end
@@ -393,19 +302,32 @@ end
 @constraint(model, x[goal_region_idx, bezier_degree, 1] == goal_pos[1])
 @constraint(model, x[goal_region_idx, bezier_degree, 2] == goal_pos[2])
 
-# 5. Objective: Minimize Path Length (L1 Norm)
+# 5. Objective: Minimize Path Length (L1 Norm) + Smoothness (Regularization)
 @variable(model, t[1:n_regions, 1:bezier_degree, 1:2] >= 0)
+@variable(model, acc[1:n_regions, 1:2] >= 0) # Slack for acceleration (smoothness)
+
+lambda_smooth = 0.1 # Weight for smoothness
 
 for i in 1:n_regions
+    # Path Length (Velocity)
     for k in 1:bezier_degree
         for d in 1:2
             @constraint(model, t[i, k, d] >= x[i, k, d] - x[i, k-1, d])
             @constraint(model, t[i, k, d] >= -(x[i, k, d] - x[i, k-1, d]))
         end
     end
+    
+    # Smoothness (Acceleration): Minimize change in velocity
+    # (P2 - P1) - (P1 - P0) = P2 - 2P1 + P0
+    for d in 1:2
+        acc_val = x[i, 2, d] - 2*x[i, 1, d] + x[i, 0, d]
+        @constraint(model, acc[i, d] >= acc_val)
+        @constraint(model, acc[i, d] >= -acc_val)
+    end
 end
 
-@objective(model, Min, sum(t))
+# Minimize Length + Smoothness
+@objective(model, Min, sum(t) + lambda_smooth * sum(acc))
 
 println("Solving GCS optimization...")
 optimize!(model)
@@ -445,7 +367,7 @@ for i in 1:n_regions, j in 1:n_regions
     if adj_matrix[i, j]
         c1 = mean(collect(points(vrep(regions[i]))))
         c2 = mean(collect(points(vrep(regions[j]))))
-        plot!(plt, [c1[1], c2[1]], [c1[2], c2[2]], color=:gray, alpha=0.3)
+        plot!(plt, [c1[1], c2[1]], [c1[2], c2[2]], color=:yellow, alpha=0.5, linewidth=1.5)
     end
 end
 
