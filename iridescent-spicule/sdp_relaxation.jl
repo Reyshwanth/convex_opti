@@ -123,7 +123,10 @@ function solve_sdp_gram_matrix(
     
     constraints = [Z[1, 1] == 1]
     
-    # Objective: minimize distance errors
+    # Objective: maximize information using covariance-based formulation
+    # We use Fisher Information weighting: closer measurements contribute more information
+    # Objective: minimize weighted distance errors where weight = 1/d_measured²
+    sigma_sq = 0.1^2  # Measurement noise variance
     obj = 0.0
     
     for meas in measurements
@@ -131,22 +134,20 @@ function solve_sdp_gram_matrix(
         
         if type_i == :agent && type_j == :agent
             # Extract blocks for agent i and j
-            # Position i: Z[2 + (i-1)*d : 1 + i*d, 1]
-            # Position j: Z[2 + (j-1)*d : 1 + j*d, 1]
-            
             idx_i = (2 + (i-1)*d) : (1 + i*d)
             idx_j = (2 + (j-1)*d) : (1 + j*d)
             
-            # ||xᵢ - xⱼ||² = sum((Z[idx_i, 1] - Z[idx_j, 1]).^2)
-            #               = Z[idx_i,1]ᵀZ[idx_i,1] + Z[idx_j,1]ᵀZ[idx_j,1] - 2Z[idx_i,1]ᵀZ[idx_j,1]
-            
-            # Using Gram matrix: = tr(Z[idx_i,idx_i]) + tr(Z[idx_j,idx_j]) - 2tr(Z[idx_i,idx_j])
+            # ||xᵢ - xⱼ||² using Gram matrix formulation
             dist_sq = quadform(Z[idx_i, 1], Matrix{Float64}(I, d, d)) + 
                      quadform(Z[idx_j, 1], Matrix{Float64}(I, d, d)) - 
                      2 * dot(Z[idx_i, 1], Z[idx_j, 1])
             
             error = dist_sq - dist_measured^2
-            obj += square(error)
+            
+            # Fisher Information weight: 1/(σ² * d²)
+            # Measurements at closer range provide more information
+            weight = 1.0 / (sigma_sq * (dist_measured^2 + 1e-6))
+            obj += weight * square(error)
             
         elseif type_i == :agent && type_j == :anchor
             idx_i = (2 + (i-1)*d) : (1 + i*d)
@@ -158,7 +159,10 @@ function solve_sdp_gram_matrix(
                      dot(a_j, a_j)
             
             error = dist_sq - dist_measured^2
-            obj += square(error)
+            
+            # Fisher Information weight
+            weight = 1.0 / (sigma_sq * (dist_measured^2 + 1e-6))
+            obj += weight * square(error)
         end
     end
     

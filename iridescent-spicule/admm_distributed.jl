@@ -99,12 +99,17 @@ function solve_admm_distributed(
                 step_size = 0.1 / rho
                 
                 # Distance error gradients (agent-anchor)
+                # Use Fisher Information weighting: 1/(σ² * d²)  
+                # But cap the weight to prevent numerical instability
+                sigma_sq = 0.1^2
                 for (a_id, d_meas) in anchor_measurements[i]
                     a_pos = anchor_pos[a_id, :]
                     diff = x[i, :] - a_pos
                     dist_current = norm(diff) + 1e-8
                     error = dist_current - d_meas
-                    grad += 2 * error * diff / dist_current
+                    # Fisher weight with cap to prevent too aggressive weighting
+                    weight = min(10.0, 1.0 / (sigma_sq * (d_meas^2 + 1e-2)))
+                    grad += 2 * weight * error * diff / dist_current
                 end
                 
                 # Distance error gradients (agent-agent)
@@ -121,7 +126,9 @@ function solve_admm_distributed(
                     diff = x[i, :] - x[j, :]
                     dist_current = norm(diff) + 1e-8
                     error = dist_current - d_meas
-                    grad += 2 * error * diff / dist_current
+                    # Fisher weight with cap
+                    weight = min(10.0, 1.0 / (sigma_sq * (d_meas^2 + 1e-2)))
+                    grad += 2 * weight * error * diff / dist_current
                 end
                 
                 # Augmented Lagrangian terms

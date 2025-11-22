@@ -46,7 +46,9 @@ Consider a sensor network with:
     \item Noisy distance measurements $d_{ij}$ between connected nodes
 \end{itemize}
 
-The fundamental localization problem can be formulated as:
+The fundamental localization problem can be formulated in two equivalent ways:
+
+\textbf{Distance-Based Formulation (Traditional):}
 \begin{equation}
 \boxed{
 \begin{aligned}
@@ -57,14 +59,37 @@ The fundamental localization problem can be formulated as:
 \label{eq:basic_problem}
 \end{equation}
 
+\textbf{Information-Theoretic Formulation (Our Approach):}
+
+Instead of minimizing distance errors uniformly, we weight each measurement by its \emph{information content} using the Fisher Information Matrix. The Fisher Information for a distance measurement is inversely proportional to the squared distance: $I_{ij} \propto 1/(d_{ij}^2 \sigma^2)$, where $\sigma^2$ is the measurement noise variance.
+
+Our objective is to maximize the total information (minimize uncertainty) about agent positions:
+\begin{equation}
+\boxed{
+\begin{aligned}
+\min_{\mathbf{x}_1, \ldots, \mathbf{x}_n} \quad & \sum_{(i,j) \in \mathcal{E}} \frac{1}{\sigma^2 d_{ij}^2} \left(\|\mathbf{x}_i - \mathbf{x}_j\| - d_{ij}\right)^2
+\end{aligned}
+}
+\label{eq:fisher_problem}
+\end{equation}
+
+This formulation has several advantages:
+\begin{itemize}
+    \item \textbf{Information-optimal}: Closer measurements (higher SNR) are weighted more heavily
+    \item \textbf{Theoretically principled}: Based on Fisher Information and Cramér-Rao bounds
+    \item \textbf{Better conditioning}: Prevents over-reliance on distant, noisy measurements
+    \item \textbf{Covariance interpretation}: Implicitly minimizes position uncertainty
+\end{itemize}
+
 where:
 \begin{itemize}
     \item $\mathcal{E}_{AA}$: edges between agents (proximity-based, $\|\mathbf{x}_i - \mathbf{x}_j\| < r_{max}$)
     \item $\mathcal{E}_{AN}$: edges between agents and anchors
     \item $d_{ij} = \|\mathbf{x}_i^* - \mathbf{x}_j^*\| + \epsilon_{ij}$: noisy measurements with $\epsilon_{ij} \sim \mathcal{N}(0, \sigma^2)$
+    \item $\sigma^2 = 0.01$: measurement noise variance
 \end{itemize}
 
-\textbf{Challenge}: This is a \emph{non-convex} optimization problem due to the Euclidean norm constraints. Direct minimization can get stuck in local minima.
+\textbf{Challenge}: This remains a \emph{non-convex} optimization problem due to the Euclidean norm constraints. Direct minimization can get stuck in local minima.
 
 \subsection{Problem with Outliers}
 
@@ -76,18 +101,18 @@ In realistic scenarios, measurements may contain outliers due to:
     \item Adversarial corruption
 \end{itemize}
 
-We extend the formulation to handle outliers by introducing binary trust variables $b_{ij} \in \{0, 1\}$:
+We extend the formulation to handle outliers by introducing binary trust variables $b_{ij} \in \{0, 1\}$ while maintaining the Fisher Information weighting:
 \begin{equation}
 \boxed{
 \begin{aligned}
-\min_{\mathbf{x}_1, \ldots, \mathbf{x}_n, \mathbf{b}} \quad & \sum_{(i,j) \in \mathcal{E}} b_{ij} \left(\|\mathbf{x}_i - \mathbf{x}_j\| - d_{ij}\right)^2 + \lambda \sum_{(i,j) \in \mathcal{E}} (1 - b_{ij}) \\
+\min_{\mathbf{x}_1, \ldots, \mathbf{x}_n, \mathbf{b}} \quad & \sum_{(i,j) \in \mathcal{E}} \frac{b_{ij}}{\sigma^2 d_{ij}^2} \left(\|\mathbf{x}_i - \mathbf{x}_j\| - d_{ij}\right)^2 + \lambda \sum_{(i,j) \in \mathcal{E}} (1 - b_{ij}) \\
 \text{s.t.} \quad & b_{ij} \in \{0, 1\}, \quad \forall (i,j) \in \mathcal{E}
 \end{aligned}
 }
 \label{eq:outlier_problem}
 \end{equation}
 
-where $\lambda > 0$ is a penalty parameter that controls the sparsity preference (preferring to trust measurements).
+where $\lambda > 0$ is a penalty parameter that controls the sparsity preference (preferring to trust measurements). The Fisher Information weighting $1/(\sigma^2 d_{ij}^2)$ ensures that trusted close-range measurements contribute more to the objective than distant measurements.
 
 \section{Relaxation Methods}
 
@@ -117,17 +142,24 @@ where $\mathbf{x} = \text{vec}([\mathbf{x}_1, \ldots, \mathbf{x}_n])$ and $\math
 
 \subsubsection{SDP Formulation}
 
-The relaxed SDP becomes:
+The relaxed SDP with Fisher Information weighting becomes:
 \begin{equation}
 \boxed{
 \begin{aligned}
-\min_{\mathbf{Z}} \quad & \sum_{(i,j) \in \mathcal{E}} \left(\mathbf{Z}_{ii} + \mathbf{Z}_{jj} - 2\mathbf{Z}_{ij} - d_{ij}^2\right)^2 \\
+\min_{\mathbf{Z}} \quad & \sum_{(i,j) \in \mathcal{E}} \frac{1}{\sigma^2 d_{ij}^2} \left(\mathbf{Z}_{ii} + \mathbf{Z}_{jj} - 2\mathbf{Z}_{ij} - d_{ij}^2\right)^2 \\
 \text{s.t.} \quad & \mathbf{Z} \succeq 0 \\
 & \mathbf{Z}_{11} = 1
 \end{aligned}
 }
 \label{eq:sdp}
 \end{equation}
+
+The Fisher Information weighting $w_{ij} = 1/(\sigma^2 d_{ij}^2)$ ensures that:
+\begin{itemize}
+    \item Close-range measurements (small $d_{ij}$) receive higher weight
+    \item The objective reflects the Cramér-Rao lower bound on position covariance
+    \item The solution minimizes the trace of the estimation error covariance matrix
+\end{itemize}
 
 \textbf{Properties}:
 \begin{itemize}
@@ -206,17 +238,24 @@ The augmented Lagrangian is:
 
 \subsubsection{Mixed-Integer Formulation}
 
-To handle outliers, we use binary variables $b_{ij} \in \{0, 1\}$ indicating whether measurement $(i,j)$ is trusted:
+To handle outliers, we use binary variables $b_{ij} \in \{0, 1\}$ indicating whether measurement $(i,j)$ is trusted, combined with Fisher Information weighting:
 
 \begin{equation}
 \boxed{
 \begin{aligned}
-\min_{\mathbf{x}, \mathbf{b}} \quad & \sum_{(i,j) \in \mathcal{E}} b_{ij} \left(\|\mathbf{x}_i - \mathbf{x}_j\| - d_{ij}\right)^2 + \lambda \sum_{(i,j)} (1 - b_{ij}) \\
+\min_{\mathbf{x}, \mathbf{b}} \quad & \sum_{(i,j) \in \mathcal{E}} \frac{b_{ij}}{\sigma^2 d_{ij}^2} \left(\|\mathbf{x}_i - \mathbf{x}_j\| - d_{ij}\right)^2 + \lambda \sum_{(i,j)} (1 - b_{ij}) \\
 \text{s.t.} \quad & b_{ij} \in \{0, 1\}, \quad \forall (i,j) \in \mathcal{E}
 \end{aligned}
 }
 \label{eq:miqp}
 \end{equation}
+
+The Fisher Information weighting ensures that:
+\begin{itemize}
+    \item Trusted close-range measurements dominate the objective
+    \item Outliers in distant measurements have less impact
+    \item The formulation is robust to correlated noise in agent clusters
+\end{itemize}
 
 \subsubsection{Relaxation Strategy}
 

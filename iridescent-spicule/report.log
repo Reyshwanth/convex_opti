@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2022/dev/Debian) (preloaded format=pdflatex 2025.10.19)  21 NOV 2025 11:50
+This is pdfTeX, Version 3.141592653-2.6-1.40.22 (TeX Live 2022/dev/Debian) (preloaded format=pdflatex 2025.10.19)  21 NOV 2025 21:24
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -467,74 +467,77 @@ LaTeX Font Info:    Trying to load font information for U+msb on input line 22.
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 ) [1
 
-{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}] [2] [3]
+{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}] [2] [3] [4]
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-[4]
-<results_comparison.png, id=179, 1204.5pt x 401.5pt>
+<results_comparison.png, id=178, 1204.5pt x 401.5pt>
 File: results_comparison.png Graphic file (type png)
 <use results_comparison.png>
-Package pdftex.def Info: results_comparison.png  used on input line 290.
+Package pdftex.def Info: results_comparison.png  used on input line 329.
 (pdftex.def)             Requested size: 452.9679pt x 150.99097pt.
-<results_sdp.png, id=180, 800.9925pt x 803.0pt>
+[5]
+<results_sdp.png, id=186, 800.9925pt x 803.0pt>
 File: results_sdp.png Graphic file (type png)
 <use results_sdp.png>
-Package pdftex.def Info: results_sdp.png  used on input line 302.
+Package pdftex.def Info: results_sdp.png  used on input line 341.
 (pdftex.def)             Requested size: 217.42265pt x 217.96466pt.
-<results_sdp-jump.png, id=181, 800.9925pt x 803.0pt>
+<results_sdp-jump.png, id=187, 801.99625pt x 803.0pt>
 File: results_sdp-jump.png Graphic file (type png)
 <use results_sdp-jump.png>
-Package pdftex.def Info: results_sdp-jump.png  used on input line 308.
-(pdftex.def)             Requested size: 217.42265pt x 217.96466pt.
-<results_admm.png, id=182, 800.9925pt x 803.0pt>
+Package pdftex.def Info: results_sdp-jump.png  used on input line 347.
+(pdftex.def)             Requested size: 217.42265pt x 217.6951pt.
+<results_admm.png, id=188, 801.99625pt x 803.0pt>
 File: results_admm.png Graphic file (type png)
 <use results_admm.png>
-Package pdftex.def Info: results_admm.png  used on input line 322.
-(pdftex.def)             Requested size: 217.42265pt x 217.96466pt.
-<admm_convergence.png, id=183, 803.0pt x 501.875pt>
+Package pdftex.def Info: results_admm.png  used on input line 361.
+(pdftex.def)             Requested size: 217.42265pt x 217.6951pt.
+<admm_convergence.png, id=189, 803.0pt x 501.875pt>
 File: admm_convergence.png Graphic file (type png)
 <use admm_convergence.png>
-Package pdftex.def Info: admm_convergence.png  used on input line 328.
+Package pdftex.def Info: admm_convergence.png  used on input line 367.
 (pdftex.def)             Requested size: 217.42265pt x 135.89095pt.
-<results_miqp.png, id=185, 800.9925pt x 803.0pt>
+<results_miqp.png, id=191, 801.99625pt x 803.0pt>
 File: results_miqp.png Graphic file (type png)
 <use results_miqp.png>
-Package pdftex.def Info: results_miqp.png  used on input line 341.
-(pdftex.def)             Requested size: 271.7835pt x 272.46501pt.
- [5] [6 <./results_comparison.png> <./results_sdp.png> <./results_sdp-jump.png>
-]
-<performance_comparison.png, id=199, 800.9925pt x 803.0pt>
+Package pdftex.def Info: results_miqp.png  used on input line 380.
+(pdftex.def)             Requested size: 271.7835pt x 272.12193pt.
+ [6 <./results_comparison.png>] [7 <./results_sdp.png> <./results_sdp-jump.png>
+ <./results_admm.png> <./admm_convergence.png>]
+<performance_comparison.png, id=205, 800.9925pt x 803.0pt>
 File: performance_comparison.png Graphic file (type png)
 <use performance_comparison.png>
-Package pdftex.def Info: performance_comparison.png  used on input line 352.
+Package pdftex.def Info: performance_comparison.png  used on input line 391.
 (pdftex.def)             Requested size: 317.07614pt x 317.87381pt.
-<dynamic_simulation.png, id=201, 1204.5pt x 803.0pt>
+<dynamic_simulation.png, id=207, 1204.5pt x 803.0pt>
 File: dynamic_simulation.png Graphic file (type png)
 <use dynamic_simulation.png>
-Package pdftex.def Info: dynamic_simulation.png  used on input line 388.
+Package pdftex.def Info: dynamic_simulation.png  used on input line 427.
 (pdftex.def)             Requested size: 217.42265pt x 144.9381pt.
-<trajectories_all.png, id=202, 1806.75pt x 602.25pt>
+<trajectories_all.png, id=208, 1806.75pt x 602.25pt>
 File: trajectories_all.png Graphic file (type png)
 <use trajectories_all.png>
-Package pdftex.def Info: trajectories_all.png  used on input line 394.
+Package pdftex.def Info: trajectories_all.png  used on input line 433.
 (pdftex.def)             Requested size: 217.42265pt x 72.46904pt.
-<training_curves.png, id=204, 800.9925pt x 803.0pt>
+<training_curves.png, id=210, 800.9925pt x 803.0pt>
 File: training_curves.png Graphic file (type png)
 <use training_curves.png>
-Package pdftex.def Info: training_curves.png  used on input line 407.
+Package pdftex.def Info: training_curves.png  used on input line 446.
 (pdftex.def)             Requested size: 407.66833pt x 408.69139pt.
- [7 <./results_admm.png> <./admm_convergence.png>] [8 <./results_miqp.png> <./p
-erformance_comparison.png>] [9 <./dynamic_simulation.png> <./trajectories_all.p
-ng>] [10 <./training_curves.png>] [11] (./report.aux)
+ [8 <./results_miqp.png>]
+[9 <./performance_comparison.png> <./dynamic_simulation.png> <./trajectories_al
+l.png>] [10 <./training_curves.png>] [11] [12] (./report.aux)
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
 Package rerunfilecheck Info: File `report.out' has not changed.
 (rerunfilecheck)             Checksum: 5555E2432F37453440E25B6778387B59;5345.
  ) 
 Here is how much of TeX's memory you used:
- 11959 strings out of 480247
- 189235 string characters out of 5896150
+ 11963 strings out of 480247
+ 189282 string characters out of 5896150
  483412 words of memory out of 5000000
- 29678 multiletter control sequences out of 15000+600000
+ 29680 multiletter control sequences out of 15000+600000
  478894 words of font info for 63 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  67i,11n,77p,666b,487s stack positions out of 5000i,500n,10000p,200000b,80000s
@@ -553,10 +556,10 @@ cm/cmr8.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy1
 0.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb><
 /usr/share/texlive/texmf-dist/fonts/type1/public/amsfonts/cm/cmti10.pfb></usr/s
 hare/texlive/texmf-dist/fonts/type1/public/amsfonts/symbols/msbm10.pfb>
-Output written on report.pdf (11 pages, 822928 bytes).
+Output written on report.pdf (12 pages, 933359 bytes).
 PDF statistics:
- 322 PDF objects out of 1000 (max. 8388607)
- 265 compressed objects within 3 object streams
- 71 named destinations out of 1000 (max. 500000)
+ 329 PDF objects out of 1000 (max. 8388607)
+ 271 compressed objects within 3 object streams
+ 73 named destinations out of 1000 (max. 500000)
  307 words of extra memory for PDF output out of 10000 (max. 10000000)
 

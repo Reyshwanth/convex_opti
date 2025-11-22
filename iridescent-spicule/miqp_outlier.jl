@@ -91,10 +91,15 @@ function solve_miqp_outlier_rejection(
     end
     
     # Objective: weighted distance errors + outlier penalty
+    # Use Fisher Information weighting: 1/(σ² * d²)
+    sigma_sq = 0.1^2
     obj_expr = @expression(model, 0.0)
     
     for (idx, meas) in enumerate(measurements)
         type_i, i, type_j, j, dist_true, dist_measured, is_outlier_true = meas
+        
+        # Fisher Information weight: closer measurements have more information
+        fisher_weight = 1.0 / (sigma_sq * (dist_measured^2 + 1e-6))
         
         if type_i == :agent && type_j == :agent
             # Agent-agent distance error
@@ -102,8 +107,8 @@ function solve_miqp_outlier_rejection(
             dist_sq = @expression(model, sum(diff[k]^2 for k in 1:d))
             error = @expression(model, dist_sq - dist_measured^2)
             
-            # Weighted by trust variable
-            obj_expr = @expression(model, obj_expr + b[idx] * error^2)
+            # Weighted by trust variable and Fisher Information
+            obj_expr = @expression(model, obj_expr + fisher_weight * b[idx] * error^2)
             
         elseif type_i == :agent && type_j == :anchor
             # Agent-anchor distance error
@@ -111,8 +116,8 @@ function solve_miqp_outlier_rejection(
             dist_sq = @expression(model, sum(diff[k]^2 for k in 1:d))
             error = @expression(model, dist_sq - dist_measured^2)
             
-            # Weighted by trust variable
-            obj_expr = @expression(model, obj_expr + b[idx] * error^2)
+            # Weighted by trust variable and Fisher Information
+            obj_expr = @expression(model, obj_expr + fisher_weight * b[idx] * error^2)
         end
         
         # Penalty for not trusting measurement
