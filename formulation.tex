@@ -125,4 +125,91 @@ x_{s,0} = p_{\text{start}}, \quad x_{g,K} = p_{\text{goal}}
 \vspace{1em}
 \noindent \textbf{Note}: $M$ is a sufficiently large constant ("Big-M"). The relaxation allows the problem to be solved by convex solvers like SCS, which support PSD cones but not integer variables. The result is a flow indicating the optimal path.
 
+\section{Cooperative Localization: Epigraph Formulation}
+
+This section describes the epigraph-based approach for sensor network localization using SDP relaxation.
+
+\subsection{Problem Setup}
+
+Given:
+\begin{itemize}
+    \item $n$ agents with unknown positions $\mathbf{x}_i \in \mathbb{R}^d$ ($i = 1,\dots,n$)
+    \item $m$ anchors with known positions $\mathbf{a}_j \in \mathbb{R}^d$ ($j = 1,\dots,m$)
+    \item Distance measurements $d_{ij}$ (noisy) between agents or between agents and anchors
+\end{itemize}
+
+Objective: Estimate agent positions $\mathbf{x}_i$ that best fit the distance measurements.
+
+\subsection{Standard Epigraph Approach}
+
+Instead of directly minimizing $\|\|\mathbf{x}_i - \mathbf{x}_j\| - d_{ij}\|$, we introduce auxiliary variables:
+
+\begin{itemize}
+    \item $s_{ij} \ge 0$: Upper bound on distance squared $\|\mathbf{x}_i - \mathbf{x}_j\|^2$
+    \item $t_{ij} \ge 0$: Epigraph variable for residual magnitude
+\end{itemize}
+
+\textbf{Optimization Problem:}
+\begin{equation*}
+\min \sum_{(i,j) \in \mathcal{E}} w_{ij} \cdot t_{ij}
+\end{equation*}
+
+\noindent \textbf{Subject to:}
+
+\subsubsection*{Distance Constraint (Rotated SOC)}
+For each measurement $(i,j)$:
+\begin{equation*}
+s_{ij}^2 \ge \|\mathbf{x}_i - \mathbf{x}_j\|^2 \quad \Leftrightarrow \quad 
+\begin{pmatrix} s_{ij} \\ 0.5 \\ \mathbf{x}_i - \mathbf{x}_j \end{pmatrix} \in \mathcal{K}_{\text{rot}}
+\end{equation*}
+where $\mathcal{K}_{\text{rot}}$ is the rotated second-order cone: $\{(t, u, \mathbf{v}) : tu \ge \|\mathbf{v}\|^2, t \ge 0, u \ge 0\}$.
+
+\subsubsection*{Residual Epigraph (Rotated SOC)}
+\begin{equation*}
+t_{ij}^2 \ge (s_{ij} - d_{ij}^2)^2 \quad \Leftrightarrow \quad 
+\begin{pmatrix} t_{ij} \\ 0.5 \\ s_{ij} - d_{ij}^2 \end{pmatrix} \in \mathcal{K}_{\text{rot}}
+\end{equation*}
+
+\subsubsection*{Fisher Information Weighting}
+The weights $w_{ij}$ encode measurement quality:
+\begin{equation*}
+w_{ij} = \frac{1}{\sigma^2 \cdot d_{ij}^2}
+\end{equation*}
+where $\sigma^2$ is the measurement noise variance. Closer measurements (smaller $d_{ij}$) receive higher weight, reflecting their higher information content.
+
+\subsection{Robust Huber Loss Formulation}
+
+To handle outliers, we use Huber loss instead of squared loss. The Huber loss is defined as:
+\begin{equation*}
+L_\delta(r) = \begin{cases}
+\frac{r^2}{2\delta} & \text{if } |r| \le \delta \\
+\delta|r| - \frac{\delta}{2} & \text{if } |r| > \delta
+\end{cases}
+\end{equation*}
+
+\textbf{Epigraph Formulation:}
+
+Introduce residual variable $r_{ij} = s_{ij} - d_{ij}^2$ and epigraph variable $t_{ij}$ such that $t_{ij} \ge L_\delta(r_{ij})$.
+
+\noindent \textbf{Constraints:}
+\begin{align*}
+& r_{ij} = s_{ij} - d_{ij}^2 \\
+& s_{ij}^2 \ge \|\mathbf{x}_i - \mathbf{x}_j\|^2 \quad (\text{Rotated SOC}) \\
+& 2\delta \cdot t_{ij} \ge r_{ij}^2 \quad (\text{Rotated SOC}) \\
+& t_{ij} \ge \delta r_{ij} - \frac{\delta^2}{2} \\
+& t_{ij} \ge -\delta r_{ij} - \frac{\delta^2}{2} \\
+& s_{ij} \ge 0, \quad t_{ij} \ge 0
+\end{align*}
+
+The parameter $\delta > 0$ controls the transition between quadratic (small residuals) and linear (large residuals) behavior. This makes the formulation robust to outlier measurements while maintaining high accuracy for inliers.
+
+\subsection{Advantages of Epigraph Approach}
+
+\begin{enumerate}
+    \item \textbf{Convexity}: All constraints are convex (rotated SOC and linear).
+    \item \textbf{Scalability}: Can be solved efficiently with interior-point methods (SCS, Mosek).
+    \item \textbf{Robustness}: Huber loss variant handles outliers without integer variables.
+    \item \textbf{Information-theoretic}: Fisher weighting prioritizes high-quality measurements.
+\end{enumerate}
+
 \end{document}

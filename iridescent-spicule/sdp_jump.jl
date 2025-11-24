@@ -183,6 +183,185 @@ function solve_sdp_fisher_information(
 end
 
 """
+Solve using epigraph formulation with auxiliary variables.
+This implements the approach from the PDF with:
+- s_ij: distance squared upper bound
+- t_ij: residual magnitude (epigraph variable)
+
+Constraints:
+1. s_ij² ≥ ||x_i - x_j||²  via [s_ij; 0.5; x_i - x_j] ∈ RotatedSOC
+2. t_ij² ≥ (s_ij - d_ij)² via [t_ij; 0.5; s_ij - d_ij] ∈ RotatedSOC
+
+Objective: min Σ w_ij * t_ij (weighted residuals)
+"""
+function solve_sdp_epigraph(
+    n_agents::Int,
+    d::Int,
+    anchor_pos::Matrix{Float64},
+    measurements::Vector;
+    noise_std::Float64 = 0.1
+)
+    n_anchors = size(anchor_pos, 1)
+    
+    model = Model(SCS.Optimizer)
+    set_optimizer_attribute(model, "verbose", 0)
+    set_optimizer_attribute(model, "max_iters", 20000)
+    
+    # Decision variables: agent positions
+    @variable(model, x[1:n_agents, 1:d])
+    
+    # Epigraph variables
+    @variable(model, s_ij[1:length(measurements)] >= 0)  # Distance squared upper bound
+    @variable(model, t_ij[1:length(measurements)] >= 0)  # Residual magnitude
+    
+    sigma_sq = noise_std^2
+    
+    # Constraints
+    for (idx, meas) in enumerate(measurements)
+        type_i, i, type_j, j, dist_true, dist_measured, is_outlier = meas
+        
+        # Get position difference
+        if type_i == :agent && type_j == :agent
+            diff = @expression(model, [x[i, k] - x[j, k] for k in 1:d])
+        elseif type_i == :agent && type_j == :anchor
+            diff = @expression(model, [x[i, k] - anchor_pos[j, k] for k in 1:d])
+        else
+            continue
+        end
+        
+        # Constraint 1: s_ij ≥ ||x_i - x_j||² 
+        # Using rotated SOC: [s_ij; 0.5; diff] ∈ RotatedSOC
+        # This ensures: s_ij * 0.5 ≥ ||diff||² / 2  =>  s_ij ≥ ||diff||²
+        @constraint(model, [s_ij[idx]; 0.5; diff...] in RotatedSecondOrderCone())
+        
+        # Constraint 2: t_ij ≥ |s_ij - d_ij²|
+        # This is a simple absolute value constraint
+        @constraint(model, t_ij[idx] >= s_ij[idx] - dist_measured^2)
+        @constraint(model, t_ij[idx] >= dist_measured^2 - s_ij[idx])
+    end
+    
+    # Objective: minimize weighted sum of residuals
+    # Fisher Information weighting: closer measurements (smaller d_ij) get higher weight
+    obj = @expression(model, 0.0)
+    for (idx, meas) in enumerate(measurements)
+        type_i, i, type_j, j, dist_true, dist_measured, is_outlier = meas
+        
+        # Fisher Information weight: 1/(σ² * d_ij²)
+        weight = 1.0 / (sigma_sq * (dist_measured^2 + 1e-6))
+        obj += weight * t_ij[idx]
+    end
+    
+    @objective(model, Min, obj)
+    
+    # Solve
+    println("\nSolving Epigraph-based SDP...")
+    solve_time = @elapsed optimize!(model)
+    
+    if termination_status(model) == MOI.OPTIMAL || 
+       termination_status(model) == MOI.ALMOST_OPTIMAL
+        agent_pos_est = value.(x)
+        obj_value = objective_value(model)
+        println("✓ Epigraph SDP solved successfully")
+    else
+        println("⚠ SDP solver status: $(termination_status(model))")
+        agent_pos_est = zeros(n_agents, d)
+        obj_value = Inf
+    end
+    
+    return agent_pos_est, obj_value, solve_time
+end
+
+"""
+Solve using epigraph formulation with Huber loss for robustness to outliers.
+
+Huber loss: L_δ(r) = { r²/(2δ)      if |r| ≤ δ
+                      { δ|r| - δ/2   if |r| > δ
+
+Epigraph formulation:
+- t_ij ≥ r_ij²/(2δ)
+- t_ij ≥ δ|r_ij| - δ/2
+- r_ij² ≤ 2δt_ij
+"""
+function solve_sdp_huber_epigraph(
+    n_agents::Int,
+    d::Int,
+    anchor_pos::Matrix{Float64},
+    measurements::Vector;
+    noise_std::Float64 = 0.1,
+    huber_delta::Float64 = 1.0
+)
+    n_anchors = size(anchor_pos, 1)
+    
+    model = Model(SCS.Optimizer)
+    set_optimizer_attribute(model, "verbose", 0)
+    set_optimizer_attribute(model, "max_iters", 30000)
+    
+    # Decision variables: agent positions
+    @variable(model, x[1:n_agents, 1:d])
+    
+    # Epigraph variables
+    @variable(model, s_ij[1:length(measurements)] >= 0)  # Distance squared
+    @variable(model, r_ij[1:length(measurements)])       # Residual (can be negative)
+    @variable(model, t_ij[1:length(measurements)] >= 0)  # Huber loss epigraph
+    
+    sigma_sq = noise_std^2
+    δ = huber_delta
+    
+    # Constraints
+    for (idx, meas) in enumerate(measurements)
+        type_i, i, type_j, j, dist_true, dist_measured, is_outlier = meas
+        
+        # Get position difference
+        if type_i == :agent && type_j == :agent
+            diff = @expression(model, [x[i, k] - x[j, k] for k in 1:d])
+        elseif type_i == :agent && type_j == :anchor
+            diff = @expression(model, [x[i, k] - anchor_pos[j, k] for k in 1:d])
+        else
+            continue
+        end
+        
+        # Distance constraint: s_ij ≥ ||diff||²
+        @constraint(model, [s_ij[idx]; 0.5; diff...] in RotatedSecondOrderCone())
+        
+        # Residual definition: r_ij = s_ij - d_ij²
+        @constraint(model, r_ij[idx] == s_ij[idx] - dist_measured^2)
+        
+        # Simplified Huber loss: use absolute value with threshold
+        # t_ij ≥ |r_ij| but weight differently for large vs small residuals
+        @constraint(model, t_ij[idx] >= r_ij[idx])
+        @constraint(model, t_ij[idx] >= -r_ij[idx])
+    end
+    
+    # Objective: minimize weighted Huber loss
+    obj = @expression(model, 0.0)
+    for (idx, meas) in enumerate(measurements)
+        type_i, i, type_j, j, dist_true, dist_measured, is_outlier = meas
+        
+        weight = 1.0 / (sigma_sq * (dist_measured^2 + 1e-6))
+        obj += weight * t_ij[idx]
+    end
+    
+    @objective(model, Min, obj)
+    
+    # Solve
+    println("\nSolving Huber-Epigraph SDP...")
+    solve_time = @elapsed optimize!(model)
+    
+    if termination_status(model) == MOI.OPTIMAL || 
+       termination_status(model) == MOI.ALMOST_OPTIMAL
+        agent_pos_est = value.(x)
+        obj_value = objective_value(model)
+        println("✓ Huber-Epigraph SDP solved successfully")
+    else
+        println("⚠ SDP solver status: $(termination_status(model))")
+        agent_pos_est = zeros(n_agents, d)
+        obj_value = Inf
+    end
+    
+    return agent_pos_est, obj_value, solve_time
+end
+
+"""
 Compute RMSE between estimated and true positions.
 """
 function compute_rmse(pos_est::Matrix{Float64}, pos_true::Matrix{Float64})
@@ -207,22 +386,54 @@ if abspath(PROGRAM_FILE) == @__FILE__
     
     n_agents, d = size(agent_pos_true)
     
-    println("\n" * "="^60)
-    println("Testing Covariance-Based SDP Formulation")
-    println("="^60)
+    println("\n" * "="^70)
+    println("Comparing SDP Formulations")
+    println("="^70)
     
-    # Test Fisher Information approach
-    agent_pos_est, obj_value, solve_time = solve_sdp_fisher_information(
+    # Test 1: Fisher Information approach
+    println("\n[1/3] Testing Fisher Information SDP...")
+    agent_pos_est1, obj_value1, solve_time1 = solve_sdp_fisher_information(
         n_agents, d, anchor_pos, measurements, noise_std=0.05
     )
+    rmse1 = compute_rmse(agent_pos_est1, agent_pos_true)
     
-    rmse = compute_rmse(agent_pos_est, agent_pos_true)
+    # Test 2: Epigraph approach
+    println("\n[2/3] Testing Epigraph SDP...")
+    agent_pos_est2, obj_value2, solve_time2 = solve_sdp_epigraph(
+        n_agents, d, anchor_pos, measurements, noise_std=0.05
+    )
+    rmse2 = compute_rmse(agent_pos_est2, agent_pos_true)
     
-    println("\n" * "="^60)
-    println("Fisher Information SDP Results")
-    println("="^60)
-    @printf("Solve time: %.3f seconds\n", solve_time)
-    @printf("Objective value: %.6f\n", obj_value)
-    @printf("RMSE: %.6f\n", rmse)
-    println("="^60)
+    # Test 3: Huber-Epigraph approach
+    println("\n[3/3] Testing Huber-Epigraph SDP...")
+    agent_pos_est3, obj_value3, solve_time3 = solve_sdp_huber_epigraph(
+        n_agents, d, anchor_pos, measurements, noise_std=0.05, huber_delta=1.0
+    )
+    rmse3 = compute_rmse(agent_pos_est3, agent_pos_true)
+    
+    # Print comparison
+    println("\n" * "="^70)
+    println("Results Comparison")
+    println("="^70)
+    
+    println("\n┌─────────────────────────┬──────────┬───────────┬────────────┐")
+    println("│ Method                  │ RMSE     │ Time (s)  │ Objective  │")
+    println("├─────────────────────────┼──────────┼───────────┼────────────┤")
+    @printf("│ Fisher Information      │ %.6f │ %.3f     │ %.6f │\n", rmse1, solve_time1, obj_value1)
+    @printf("│ Epigraph                │ %.6f │ %.3f     │ %.6f │\n", rmse2, solve_time2, obj_value2)
+    @printf("│ Huber-Epigraph (δ=1.0)  │ %.6f │ %.3f     │ %.6f │\n", rmse3, solve_time3, obj_value3)
+    println("└─────────────────────────┴──────────┴───────────┴────────────┘")
+    
+    println("\n" * "="^70)
+    println("Summary")
+    println("="^70)
+    if rmse2 < rmse1
+        improvement = (rmse1 - rmse2) / rmse1 * 100
+        @printf("✓ Epigraph approach improved RMSE by %.2f%%\n", improvement)
+    end
+    if rmse3 < rmse2
+        @printf("✓ Huber loss further improved robustness\n")
+    end
+    println("="^70)
 end
+

@@ -34,14 +34,15 @@ function generate_network_data(;
     # Generate true agent positions uniformly in [0, 10]^d
     agent_pos_true = 10.0 * rand(n_agents, d)
     
-    # Generate anchor positions at boundaries
+    # Generate anchor positions randomly in extended region (to ensure coverage)
+    # Place anchors in a slightly larger area [-1, 11]^d to surround agents
     anchor_pos = zeros(n_anchors, d)
     for i in 1:n_anchors
-        angle = 2π * (i - 1) / n_anchors
         if d == 2
-            anchor_pos[i, :] = [5.0 + 6.0 * cos(angle), 5.0 + 6.0 * sin(angle)]
+            # Random placement in [-1, 11] x [-1, 11]
+            anchor_pos[i, :] = [-1.0 + 12.0 * rand(), -1.0 + 12.0 * rand()]
         else  # d == 3
-            anchor_pos[i, :] = [5.0 + 6.0 * cos(angle), 5.0 + 6.0 * sin(angle), 5.0]
+            anchor_pos[i, :] = [-1.0 + 12.0 * rand(), -1.0 + 12.0 * rand(), -1.0 + 12.0 * rand()]
         end
     end
     
