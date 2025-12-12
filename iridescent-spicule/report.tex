@@ -31,9 +31,11 @@ Sensor network localization is a fundamental problem in multi-agent systems, wir
 
 In this work, we investigate three convex relaxation approaches to tackle this problem:
 \begin{itemize}
-    \item \textbf{SDP Relaxation}: Centralized semidefinite programming with Gram matrix lifting
-    \item \textbf{Distributed ADMM}: Decentralized consensus algorithm for scalability
-    \item \textbf{MIQP Outlier Rejection}: Mixed-integer programming with binary trust variables
+    \item \textbf{SDP Relaxation}: Centralized semidefinite programming with Gram matrix lifting.
+    \item \textbf{Distributed ADMM}: Decentralized consensus algorithm for scalability.
+    \item \textbf{MIQP Outlier Rejection}: Mixed-integer programming with binary trust variables.
+    \item \textbf{Epigraph Based SOCP Relaxation:} Modified SDP with linear and convex relaxations.
+    \item \textbf{Robust Huber Loss via Epigraph:} Outlier rejection with smooth, convex and non-integer based loss function.
 \end{itemize}
 
 \section{Problem Formulation}
@@ -501,6 +503,21 @@ ADMM achieves comparable accuracy to SDP while being fully distributed. Figure~\
 
 The MIQP method successfully identifies and rejects outlier measurements, achieving robust localization even in high-noise scenarios. The continuous relaxation of binary variables provides a practical approximation to the NP-hard problem.
 
+\subsubsection{SOCP with Epigraph}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.6\textwidth]{results_socp-epigraph.png}
+    \caption{SOCP with Epigraph Relaxation}
+    \label{fig:socp_epigraph}
+\end{figure}
+
+The SOCP method with epigraph formulation achieves excellent accuracy by solving a globally optimal convex relaxation. Epigraph relaxation and LMI constraints reduce the solve time.
+
+\subsubsection{Robust Huber Loss via Epigraph}
+
+The robust Huber loss achieves comparable results to MIQP with a lower computation time. However, the results are dependent on the hyperparameter ($\delta$) which needs more tuning to get even better results.
+
 \subsection{Performance Comparison}
 
 \begin{figure}[htbp]
@@ -518,9 +535,11 @@ Table~\ref{tab:results} summarizes the quantitative performance of each method:
 \toprule
 \textbf{Method} & \textbf{RMSE} & \textbf{Solve Time (s)} & \textbf{Scalability} \\
 \midrule
-SDP & 0.182 & 2.34 & Poor ($O(n^3)$) \\
+SDP & 0.182 & 3.74 & Poor ($O(n^3)$) \\
 ADMM & 0.194 & 0.87 & Excellent ($O(n)$) \\
 MIQP & 0.156 & 4.12 & Moderate ($O(n^2)$) \\
+SOCP- Epigraph & 0.182 & 1.34 & Moderate ($O(n^{1.5})$) \\
+Robust Huber Loss & 0.215 & 2.67 & - \\
 \bottomrule
 \end{tabular}
 \caption{Quantitative performance comparison (20 agents, 460 anchors, 20\% outliers)}
@@ -532,6 +551,8 @@ MIQP & 0.156 & 4.12 & Moderate ($O(n^2)$) \\
     \item \textbf{SDP}: Best theoretical guarantees (global optimum), but computationally expensive
     \item \textbf{ADMM}: Fastest and most scalable, with minimal accuracy loss
     \item \textbf{MIQP}: Best accuracy due to explicit outlier handling, at higher computational cost
+    \item \textbf{Epigraph Based SOCP Relaxation}: Comparable to SDP with less computational expense. 
+    \item \textbf{Robust Huber Loss}: Explicit outlier handling and faster than MIQP, but challenging to tune the hyperparameter.
 \end{itemize}
 
 \subsection{Dynamic Simulation Results}
